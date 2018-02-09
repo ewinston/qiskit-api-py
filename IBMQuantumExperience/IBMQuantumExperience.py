@@ -13,6 +13,7 @@ import traceback
 import requests
 import re
 from requests_ntlm import HttpNtlmAuth
+from functools import singledispatch
 # from .HTTPProxyDigestAuth import HTTPProxyDigestAuth
 
 logging.basicConfig()
@@ -675,9 +676,19 @@ class IBMQuantumExperience(object):
             respond["error"] = execution
             return respond
 
-    def run_job(self, qasms, backend='simulator', shots=1,
+    @singledispatch
+    def run_job(self, job, backend='simulator', shots=1,
                 max_credits=None, seed=None, hub=None, group=None,
                 project=None, hpc=None, access_token=None, user_id=None):
+        """
+        Execute a job
+        """
+        raise TypeError('unrecognized job type')
+    
+    @run_job.register(list)
+    def run_job_qasm(self, qasms, backend='simulator', shots=1,
+                     max_credits=None, seed=None, hub=None, group=None,
+                     project=None, hpc=None, access_token=None, user_id=None):
         """
         Execute a job
         """
@@ -717,6 +728,39 @@ class IBMQuantumExperience(object):
 
         return job
 
+    @run_job.register(dict)
+    def run_job_qobj(self, qobj, backend='simulator',
+                     hub=None, group=None, project=None,
+                     access_token=None, user_id=None):
+        """
+        Execute a job
+        """
+        if access_token:
+            self.req.credential.set_token(access_token)
+        if user_id:
+            self.req.credential.set_user_id(user_id)
+        if not self.check_credentials():
+            return {"error": "Not credentials valid"}
+
+        backend_type = self._check_backend(backend, 'job')
+
+        if not backend_type:
+            raise BadBackendError(backend)
+
+        # necessary?
+        if seed and len(str(seed)) < 11 and str(seed).isdigit():
+            data['seed'] = seed
+        elif seed:
+            return {"error": "Seed not allowed. Max 10 digits."}
+
+        data['backend']['name'] = backend_type
+
+        url = get_job_url(self.config, hub, group, project)
+
+        job = self.req.post(url, data=json.dumps(data))
+
+        return job
+    
     def get_job(self, id_job, hub=None, group=None, project=None,
                 access_token=None, user_id=None):
         """
