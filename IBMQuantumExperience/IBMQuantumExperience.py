@@ -452,6 +452,10 @@ class IBMQuantumExperience(object):
         """ If verify is set to false, ignore SSL certificate errors """
         self.config = config
         self.req = _Request(token, config=config, verify=verify)
+        # bind dispatch methods
+        self.run_job = singledispatch(self.run_job)
+        self.run_job.register(list, self.run_job_qasms)
+        self.run_job.register(dict, self.run_job_qobj)
 
     def _check_backend(self, backend, endpoint):
         """
@@ -676,7 +680,6 @@ class IBMQuantumExperience(object):
             respond["error"] = execution
             return respond
 
-    @singledispatch
     def run_job(self, job, backend='simulator', shots=1,
                 max_credits=None, seed=None, hub=None, group=None,
                 project=None, hpc=None, access_token=None, user_id=None):
@@ -685,10 +688,9 @@ class IBMQuantumExperience(object):
         """
         raise TypeError('unrecognized job type')
     
-    @run_job.register(list)
-    def run_job_qasm(self, qasms, backend='simulator', shots=1,
-                     max_credits=None, seed=None, hub=None, group=None,
-                     project=None, hpc=None, access_token=None, user_id=None):
+    def run_job_qasms(self, qasms, backend='simulator', shots=1,
+                      max_credits=None, seed=None, hub=None, group=None,
+                      project=None, hpc=None, access_token=None, user_id=None):
         """
         Execute a job
         """
@@ -728,7 +730,6 @@ class IBMQuantumExperience(object):
 
         return job
 
-    @run_job.register(dict)
     def run_job_qobj(self, qobj, backend='simulator',
                      hub=None, group=None, project=None,
                      access_token=None, user_id=None):
@@ -753,11 +754,9 @@ class IBMQuantumExperience(object):
         elif seed:
             return {"error": "Seed not allowed. Max 10 digits."}
 
-        data['backend']['name'] = backend_type
-
         url = get_job_url(self.config, hub, group, project)
 
-        job = self.req.post(url, data=json.dumps(data))
+        job = self.req.post(url, data=json.dumps(qobj))
 
         return job
     
@@ -984,6 +983,38 @@ class IBMQuantumExperience(object):
                     del user_data["credit"]["lastRefill"]
                 return user_data["credit"]
             return {}
+
+    def get_schema(self, backend, access_token=None, user_id=None):
+        """Get the backend-specific qobj schema.
+        
+        Args:
+            backend (str): backend name
+            access_token (str): access token
+            user_id (str): user id
+
+        Returns: 
+            schema string (dict?)
+        """
+        if access_token:
+            self.req.credential.set_token(access_token)
+        if user_id:
+            self.req.credential.set_user_id(user_id)
+        if not self.check_credentials():
+            respond = {}
+            respond["status"] = 'Error'
+            respond["error"] = "Not credentials valid"
+            return respond
+        if not id_job:
+            respond = {}
+            respond["status"] = 'Error'
+            respond["error"] = "Job ID not specified"
+            return respond
+
+        # TODO: get url for schemas
+        # url += '/' + backend
+
+        return self.req.get(url)
+        
 
     def api_version(self):
         """
