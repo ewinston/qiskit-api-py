@@ -13,6 +13,7 @@ import traceback
 import requests
 import re
 from requests_ntlm import HttpNtlmAuth
+import numpy as np
 # from .HTTPProxyDigestAuth import HTTPProxyDigestAuth
 
 log = logging.getLogger(__name__)
@@ -736,7 +737,7 @@ class IBMQuantumExperience(object):
 
         url = get_job_url(self.config, hub, group, project)
         
-        job = self.req.post(url, data=json.dumps(data))
+        job = self.req.post(url, data=json.dumps(data, cls=ApiJsonEncoder))
 
         return job
 
@@ -1020,6 +1021,17 @@ class IBMQuantumExperience(object):
         """
         return self.req.get('/version')
 
+class ApiJsonEncoder(json.JSONEncoder):
+    """
+    Handle types for which default json encoder raises TypeError
+    """
+    def default(self, obj):
+        if np.issubdtype(obj, np.integer) or np.issubdtype(obj, np.floating):
+            return obj.item()
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
+        else:
+            return super().default(obj)
 
 class ApiError(Exception):
     """
